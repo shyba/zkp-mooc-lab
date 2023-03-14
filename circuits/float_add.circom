@@ -385,5 +385,115 @@ template FloatAdd(k, p) {
     signal output e_out;
     signal output m_out;
 
-    // TODO
+    //''' check that the inputs are well-formed '''
+    //check_well_formedness(k, p, e_1, m_1)
+    //check_well_formedness(k, p, e_2, m_2)
+    component check_well_formedness[2];
+
+    for (var i = 0; i < 2; i++) {
+        check_well_formedness[i] = CheckWellFormedness(k, p);
+        check_well_formedness[i].e <== e[i];
+        check_well_formedness[i].m <== m[i];
+    }
+
+    //''' Arrange numbers in the order of their magnitude.
+    //    Although not the same as magnitude, note that comparing e_1 || m_1 against e_2 || m_2 suffices to compare magnitudes.
+    //'''
+
+    //''' comparison over k+p+1 bits '''
+    component mgn_one_less_than_mgn_two = LessThan(k+p+1);
+    //mgn_1 = (e_1 << (p+1)) + m_1
+    //mgn_2 = (e_2 << (p+1)) + m_2
+    mgn_one_less_than_mgn_two.in[0] <== (e[0] * (1<<(p+1))) + m[0];
+    mgn_one_less_than_mgn_two.in[1] <== (e[1] * (1<<(p+1))) + m[1];
+
+    //if mgn_1 > mgn_2:
+    //    (alpha_e, alpha_m) = (e_1, m_1)
+    //    (beta_e, beta_m) = (e_2, m_2)
+    //else:
+    //    (alpha_e, alpha_m) = (e_2, m_2)
+    //    (beta_e, beta_m) = (e_1, m_1)
+    component first_column = Switcher();
+    component second_column = Switcher();
+
+    first_column.sel <== mgn_one_less_than_mgn_two.out;
+    first_column.L <== e[0];
+    first_column.R <== e[1];
+
+    second_column.sel <== mgn_one_less_than_mgn_two.out;
+    second_column.L <== m[0];
+    second_column.R <== m[1];
+
+    var alpha_e = first_column.outL;
+    var beta_e = first_column.outR;
+    var alpha_m = second_column.outL;
+    var beta_m = second_column.outR;
+
+    //diff = alpha_e - beta_e
+    signal diff <== alpha_e - beta_e;
+
+    //if diff > p + 1 or alpha_e == 0:
+    component p_less_than_diff = LessThan(k);
+    p_less_than_diff.in[0] <== p+1;
+    p_less_than_diff.in[1] <== diff;
+
+    component alpha_is_zero = IsZero();
+    alpha_is_zero.in <== alpha_e;
+
+    // or alpha e == 0
+    component p_is_less_or_alpha_is_zero = OR();
+    p_is_less_or_alpha_is_zero.a <== p_less_than_diff.out;
+    p_is_less_or_alpha_is_zero.b <== alpha_is_zero.out;
+
+    component alpha_branch = IfThenElse();
+    alpha_branch.cond <== p_is_less_or_alpha_is_zero.out;
+    alpha_branch.L <== 1;
+    alpha_branch.R <== alpha_m;
+
+    //alpha_m <<= diff
+    //''' m fits in 2*p+2 bits '''
+    //m = alpha_m + beta_m
+    //e = beta_e
+    //(normalized_e, normalized_m) = normalize(k, p, 2*p+1, e, m)
+    //(e_out, m_out) = round_nearest_and_check(k, p, 2*p+1, normalized_e, normalized_m)
+
+    component if_else_diff = IfThenElse();
+    if_else_diff.cond <== p_is_less_or_alpha_is_zero.out;
+    if_else_diff.L <== 0;
+    if_else_diff.R <== diff;
+
+    component if_else_beta_e = IfThenElse();
+    if_else_beta_e.cond <== p_is_less_or_alpha_is_zero.out;
+    if_else_beta_e.L <== 1;
+    if_else_beta_e.R <== beta_e;
+
+    component m_alpha_left_shift = LeftShift(p+2);
+    m_alpha_left_shift.x <== alpha_branch.out;
+    m_alpha_left_shift.shift <== if_else_diff.out;
+    m_alpha_left_shift.skip_checks <== 0;
+
+    //(normalized_e, normalized_m) = normalize(k, p, 2*p+1, e, m)
+    component normalize = Normalize(k, p, 2*p+1);
+    normalize.e <== if_else_beta_e.out;
+    normalize.m <== m_alpha_left_shift.y + beta_m;
+    normalize.skip_checks <== 0;
+
+    //(e_out, m_out) = round_nearest_and_check(k, p, 2*p+1, normalized_e, normalized_m)
+    component round_to_nearest_and_check = RoundAndCheck(k, p, 2*p+1);
+    round_to_nearest_and_check.e <== normalize.e_out;
+    round_to_nearest_and_check.m <== normalize.m_out;
+
+
+    component if_else_m = IfThenElse();
+    if_else_m.cond <== p_is_less_or_alpha_is_zero.out;
+    if_else_m.L <== alpha_m;
+    if_else_m.R <== round_to_nearest_and_check.m_out;
+
+    component if_else_e = IfThenElse();
+    if_else_e.cond <== p_is_less_or_alpha_is_zero.out;
+    if_else_e.L <== alpha_e;
+    if_else_e.R <== round_to_nearest_and_check.e_out;
+
+    e_out <== if_else_e.out;
+    m_out <== if_else_m.out;
 }
