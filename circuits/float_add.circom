@@ -148,7 +148,21 @@ template CheckBitLength(b) {
     signal input in;
     signal output out;
 
-    // TODO
+    var sum_of_bits = 0;
+    signal bit[b];
+    for (var i = 0; i < b; i++) {
+        bit[i] <-- (in >> i) & 1;
+        bit[i] * (1 - bit[i]) === 0;
+        sum_of_bits += (2 ** i) * bit[i];
+    }
+    component eq = IsEqual();
+    eq.in[0] <== in;
+    eq.in[1] <-- sum_of_bits;
+    out <== eq.out;
+    component check = IsEqual();
+    check.in[0] <-- out*in;
+    check.in[1] <-- out*sum_of_bits;
+    check.out === 1;
 }
 
 /*
