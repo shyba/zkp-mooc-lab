@@ -211,7 +211,14 @@ template RightShift(b, shift) {
     signal input x;
     signal output y;
 
-    // TODO
+    var out;
+    var shift_width = b - shift;
+    component binary = Num2Bits(b);
+    binary.in <== x;
+    for(var i=0; i<shift_width; i++) {
+        out += (binary.bits[shift+i] * (1 << i));
+    }
+    y <-- out;
 }
 
 /*
